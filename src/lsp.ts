@@ -59,7 +59,7 @@ export class LspClient {
         this.initializationOptions = initializationOptions;
 
         // Create the web worker (path is relative to the compiled file)
-        this.worker = new Worker(__WACOQ_PATH__); // Configured by esbuild
+        this.worker = startWorker(__WACOQ_PATH__); // Configured by esbuild
 
         // Surface uncaught worker errors (e.g. WASM traps) to the caller so a
         // crashed checker can be detected and restarted.
@@ -74,7 +74,8 @@ export class LspClient {
 
         // The worker expects the first message to be a base path string
         // Send that before any JSON-RPC messages so the worker can initialize correctly.
-        this.worker.postMessage(__RPC_PATH__); // Configured by esbuild
+        // It must be absolute: relative URLs do not resolve inside a blob worker.
+        this.worker.postMessage(assetUrl(__RPC_PATH__)); // Configured by esbuild
 
         // Create message reader and writer for the worker
         const reader = new rpc.BrowserMessageReader(this.worker);
@@ -206,4 +207,21 @@ export class LspClient {
         // Send the request to the language server
         return this.connection.sendRequest('proof/goals', params);
     }
+}
+
+// Resolve worker paths against this bundle's own URL, not the page's: when embedded
+// (e.g. in STACK's srcdoc iframe) the page's base URL points at the host site.
+// document.currentScript is only set while the bundle is first executing.
+const SCRIPT_BASE = (document.currentScript as HTMLScriptElement | null)?.src ?? document.baseURI;
+
+/** Absolute URL for a path served alongside this bundle, without trailing slash. */
+function assetUrl(path: string): string {
+    return new URL(path || "/", SCRIPT_BASE).href.replace(/\/$/, "");
+}
+
+function startWorker(scriptUrl: string): Worker {
+    const abs = assetUrl(scriptUrl);
+    const src = `importScripts(${JSON.stringify(abs)})`;
+    const blobUrl = URL.createObjectURL(new Blob([src], {type: "text/javascript"}));
+    return new Worker(blobUrl);
 }
