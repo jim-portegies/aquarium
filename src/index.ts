@@ -119,16 +119,24 @@ async function restartChecker(): Promise<void> {
 }
 
 /**
- * One-time application setup: starts the language server worker, creates the
- * goals panel and registers all notification handlers and DOM listeners.
- * Runs exactly once; switching files goes through `loadDocument` instead.
+ * Playground entry point: sets up the editor and proof checker, then adds the
+ * playground-only features (shortcuts, exercise dropdown, leave confirmation).
  */
 async function initApp(text?: string) {
-    const editorElem = document.getElementById("editor");
-    if (!editorElem) return;
-
     // Start with the adapted tutorial file if no other text is provided
-    const documentText = text ?? tutorialContents;
+    if (!await initAquarium(text ?? tutorialContents)) return;
+    initPlayground();
+}
+
+/**
+ * One-time editor/checker setup: starts the language server worker, creates the
+ * goals panel, registers notification handlers and loads the first document.
+ * Runs exactly once; switching files goes through `loadDocument` instead.
+ * Returns false if the page has no editor element.
+ */
+async function initAquarium(documentText: string): Promise<boolean> {
+    const editorElem = document.getElementById("editor");
+    if (!editorElem) return false;
 
     // Display loading indicator (we are setting up the language server)
     editorElem.innerHTML = `
@@ -147,11 +155,6 @@ async function initApp(text?: string) {
     // Create the goals panel
     goalsPanel = new GoalsPanel(document.getElementById("goals-panel")!, executeHelp);
 
-    // Add confirm leave notification
-    window.addEventListener("beforeunload", (event) => {
-        event.preventDefault();
-    });
-
     let timeoutHandle: number | undefined;
 	editorElem.addEventListener("scroll", (_event) => {
 		if (timeoutHandle === undefined) {
@@ -162,6 +165,22 @@ async function initApp(text?: string) {
 		}
 	});
 
+    // Load the initial document into the editor
+    loadDocument(documentText);
+    return true;
+}
+
+/**
+ * Playground-only UI: leave confirmation, keyboard shortcuts and the exercise
+ * dropdown. Talks to the editor only through `loadDocument`,
+ * `serializeDocument` and `setTeacherMode`/`isTeacherMode`.
+ */
+function initPlayground() {
+    // Add confirm leave notification
+    window.addEventListener("beforeunload", (event) => {
+        event.preventDefault();
+    });
+
     window.addEventListener("keydown", (event) => {
         const {key, ctrlKey, metaKey, altKey} = event;
         const ctrlOrMeta = ctrlKey || metaKey;
@@ -169,7 +188,7 @@ async function initApp(text?: string) {
         if (ctrlOrMeta) {
             if (key === 's') {
                 event.preventDefault();
-                const content = currentEditor.serializeDocument();
+                const content = serializeDocument();
                 if (content) {
                     const blob = new Blob([content], { type: "text/markdown" });
                     const url = URL.createObjectURL(blob);
@@ -200,10 +219,8 @@ async function initApp(text?: string) {
                 input.click();
             } else if (altKey && key === 't') {
                 event.preventDefault();
-                // toggle teacher mode variable
-                teacherMode = !teacherMode;
-                currentEditor.updateLockingState(teacherMode);
-                if (teacherMode) {
+                setTeacherMode(!isTeacherMode());
+                if (isTeacherMode()) {
                     document.getElementById("title")!.innerText = "Goals - Teacher Mode Enabled";
                 } else {
                     document.getElementById("title")!.innerText = "Goals";
@@ -233,9 +250,21 @@ async function initApp(text?: string) {
             }
         });
     }
+}
 
-    // Load the initial document into the editor
-    loadDocument(documentText);
+/** The current document as text, or undefined if it cannot be serialized. */
+function serializeDocument() {
+    return currentEditor.serializeDocument();
+}
+
+function isTeacherMode(): boolean {
+    return teacherMode;
+}
+
+/** Lock or unlock the non-input-area parts of the document. Persists across document loads. */
+function setTeacherMode(on: boolean): void {
+    teacherMode = on;
+    currentEditor.updateLockingState(on);
 }
 
 /**
