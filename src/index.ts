@@ -414,13 +414,23 @@ async function computeInputAreaStatus(client: LspClient, document: TextDocument,
         // for each input area, check the proof status
         try {
             const statuses = await Promise.all(inputAreas.map(a => {
-                    if (!continuousChecking && viewPortRange && a.intersection(viewPortRange) === undefined) {
-                        // This input area is outside of the range that has been checked and thus we can't determine its status
+                    if (!continuousChecking && viewPortRange && isAfterRange(a, viewPortRange)) {
+                        // The server checks sequentially, so only areas starting after the viewport end are unchecked;
+                        // areas before or inside the viewport have a known status.
                         return Promise.resolve(InputAreaStatus.OutOfView);
                     } else {
                         return determineProofStatus(client, document, a);
                     }
                 }));
+            if (window.parent !== window) {
+                window.parent.postMessage(
+                    {
+                        type: "waterproof:input-area-status",
+                        statuses: statuses,
+                    },
+                    "*"
+                );
+            }
             editor.setInputAreaStatus(statuses);
         } catch (reason) {
             if (wasCanceledByServer(reason)) return;  // we've likely already sent new requests
@@ -428,6 +438,11 @@ async function computeInputAreaStatus(client: LspClient, document: TextDocument,
     }, 250);
 }
 
+
+function isAfterRange(area: Range, range: Range): boolean {
+    const s = area.start, e = range.end;
+    return s.line > e.line || (s.line === e.line && s.character >= e.character);
+}
 
 function wasCanceledByServer(reason: unknown): boolean {
     return !!reason
