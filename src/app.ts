@@ -28,6 +28,10 @@ let goalsPanel: GoalsPanel;
 let currentEditor: WaterproofEditor;
 let currentTextDocument: TextDocument;
 
+// The element the editor renders into, set once by `createAquarium`.
+let editorElem: HTMLElement;
+let aquariumCreated = false;
+
 // Detects a crashed/wedged checker worker (e.g. a WASM trap in zarith/GMP that
 // leaves the server Busy forever) and offers a restart via the goals panel.
 let restartingChecker = false;
@@ -75,15 +79,37 @@ async function restartChecker(): Promise<void> {
     }
 }
 
+export type AquariumOptions = {
+    /** Element the editor renders into; its scroll events drive viewport checking. */
+    editorElement: HTMLElement;
+    /** Element holding the goals panel markup (`#goals`, `#messages`, `#help-button`, `#help-container`). */
+    goalsElement: HTMLElement;
+    /** Document loaded on startup. */
+    initialDocument: string;
+};
+
+/** Handle returned by `createAquarium`. */
+export type Aquarium = {
+    loadDocument: typeof loadDocument;
+    serializeDocument: typeof serializeDocument;
+    isTeacherMode: typeof isTeacherMode;
+    setTeacherMode: typeof setTeacherMode;
+};
+
 /**
  * One-time editor/checker setup: starts the language server worker, creates the
  * goals panel, registers notification handlers and loads the first document.
- * Runs exactly once; switching files goes through `loadDocument` instead.
- * Returns false if the page has no editor element.
+ * Switching files goes through `loadDocument` on the returned handle instead.
+ *
+ * All state in this module is page-global, so this may be called only once per
+ * page. (In STACK each question runs in its own iframe, i.e. its own page.)
  */
-export async function initAquarium(documentText: string): Promise<boolean> {
-    const editorElem = document.getElementById("editor");
-    if (!editorElem) return false;
+export async function createAquarium(options: AquariumOptions): Promise<Aquarium> {
+    if (aquariumCreated) {
+        throw new Error("createAquarium can only be called once per page.");
+    }
+    aquariumCreated = true;
+    editorElem = options.editorElement;
 
     // Display loading indicator (we are setting up the language server)
     editorElem.innerHTML = `
@@ -100,7 +126,7 @@ export async function initAquarium(documentText: string): Promise<boolean> {
     await lspClient.initializeServer();
 
     // Create the goals panel
-    goalsPanel = new GoalsPanel(document.getElementById("goals-panel")!, executeHelp);
+    goalsPanel = new GoalsPanel(options.goalsElement, executeHelp);
 
     let timeoutHandle: number | undefined;
 	editorElem.addEventListener("scroll", (_event) => {
@@ -113,21 +139,21 @@ export async function initAquarium(documentText: string): Promise<boolean> {
 	});
 
     // Load the initial document into the editor
-    loadDocument(documentText);
-    return true;
+    loadDocument(options.initialDocument);
+    return { loadDocument, serializeDocument, isTeacherMode, setTeacherMode };
 }
 
 /** The current document as text, or undefined if it cannot be serialized. */
-export function serializeDocument() {
+function serializeDocument() {
     return currentEditor.serializeDocument();
 }
 
-export function isTeacherMode(): boolean {
+function isTeacherMode(): boolean {
     return teacherMode;
 }
 
 /** Lock or unlock the non-input-area parts of the document. Persists across document loads. */
-export function setTeacherMode(on: boolean): void {
+function setTeacherMode(on: boolean): void {
     teacherMode = on;
     currentEditor.updateLockingState(on);
 }
@@ -181,10 +207,7 @@ function registerNotificationHandlers(client: LspClient) {
  * Closes the previous document on the server, opens the new one under a fresh
  * URI and replaces the editor instance.
  */
-export function loadDocument(documentText: string) {
-    const editorElem = document.getElementById("editor");
-    if (!editorElem) return;
-
+function loadDocument(documentText: string) {
     // Release the server-side state of the previous document
     if (currentTextDocument) {
         lspClient.closeDocument(currentTextDocument.uri);

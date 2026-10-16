@@ -1,6 +1,6 @@
 
 import tutorialContents from "./data/tutorial.md";
-import { initAquarium, isTeacherMode, loadDocument, serializeDocument, setTeacherMode } from "./app";
+import { Aquarium, createAquarium } from "./app";
 
 // Entry point of the web application, calls the main function.
 window.onload = async () => {
@@ -48,17 +48,24 @@ window.onload = async () => {
  * playground-only features (shortcuts, exercise dropdown, leave confirmation).
  */
 async function initApp(text?: string) {
-    // Start with the adapted tutorial file if no other text is provided
-    if (!await initAquarium(text ?? tutorialContents)) return;
-    initPlayground();
+    const editorElement = document.getElementById("editor");
+    const goalsElement = document.getElementById("goals-panel");
+    if (!editorElement || !goalsElement) return;
+
+    const app = await createAquarium({
+        editorElement,
+        goalsElement,
+        // Start with the adapted tutorial file if no other text is provided
+        initialDocument: text ?? tutorialContents,
+    });
+    initPlayground(app);
 }
 
 /**
  * Playground-only UI: leave confirmation, keyboard shortcuts and the exercise
- * dropdown. Talks to the editor only through `loadDocument`,
- * `serializeDocument` and `setTeacherMode`/`isTeacherMode`.
+ * dropdown. Talks to the editor only through the `app` handle.
  */
-function initPlayground() {
+function initPlayground(app: Aquarium) {
     // Add confirm leave notification
     window.addEventListener("beforeunload", (event) => {
         event.preventDefault();
@@ -71,7 +78,7 @@ function initPlayground() {
         if (ctrlOrMeta) {
             if (key === 's') {
                 event.preventDefault();
-                const content = serializeDocument();
+                const content = app.serializeDocument();
                 if (content) {
                     const blob = new Blob([content], { type: "text/markdown" });
                     const url = URL.createObjectURL(blob);
@@ -93,7 +100,7 @@ function initPlayground() {
                         reader.onload = (e) => {
                             const content = e.target?.result as string;
                             if (content) {
-                                loadDocument(content);
+                                app.loadDocument(content);
                             }
                         };
                         reader.readAsText(file);
@@ -102,8 +109,8 @@ function initPlayground() {
                 input.click();
             } else if (altKey && key === 't') {
                 event.preventDefault();
-                setTeacherMode(!isTeacherMode());
-                if (isTeacherMode()) {
+                app.setTeacherMode(!app.isTeacherMode());
+                if (app.isTeacherMode()) {
                     document.getElementById("title")!.innerText = "Goals - Teacher Mode Enabled";
                 } else {
                     document.getElementById("title")!.innerText = "Goals";
@@ -125,7 +132,7 @@ function initPlayground() {
                         throw new Error(`Failed to fetch ${fileUrl}`);
                     }
                     const content = await response.text();
-                    loadDocument(content);
+                    app.loadDocument(content);
                 } catch (error) {
                     console.error("Error fetching exercise sheet:", error);
                     alert(`Failed to load exercise sheet.`);
