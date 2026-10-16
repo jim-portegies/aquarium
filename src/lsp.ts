@@ -58,7 +58,9 @@ export class LspClient {
     ) {
         this.initializationOptions = initializationOptions;
 
-        // Create the web worker (path is relative to the compiled file)
+        // Create the web worker via a blob URL: in a sandboxed iframe without
+        // allow-same-origin (e.g. STACK), `new Worker(url)` is refused because the
+        // page's origin is opaque. See `startWorker`.
         this.worker = startWorker(__WACOQ_PATH__); // Configured by esbuild
 
         // Surface uncaught worker errors (e.g. WASM traps) to the caller so a
@@ -223,5 +225,8 @@ function startWorker(scriptUrl: string): Worker {
     const abs = assetUrl(scriptUrl);
     const src = `importScripts(${JSON.stringify(abs)})`;
     const blobUrl = URL.createObjectURL(new Blob([src], {type: "text/javascript"}));
-    return new Worker(blobUrl);
+    const worker = new Worker(blobUrl);
+    // Safe to revoke right away: the Worker constructor resolves the blob synchronously.
+    URL.revokeObjectURL(blobUrl);
+    return worker;
 }
