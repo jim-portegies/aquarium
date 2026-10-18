@@ -28,8 +28,9 @@ let goalsPanel: GoalsPanel;
 let currentEditor: WaterproofEditor;
 let currentTextDocument: TextDocument;
 
-// The element the editor renders into, set once by `createAquarium`.
+// The element the editor renders into and the embedder's options, set once by `createAquarium`.
 let editorElem: HTMLElement;
+let aquariumOptions: AquariumOptions;
 let aquariumCreated = false;
 
 // Detects a crashed/wedged checker worker (e.g. a WASM trap in zarith/GMP that
@@ -102,6 +103,8 @@ export type AquariumOptions = {
     goalsElement: HTMLElement;
     /** Document loaded on startup. */
     initialDocument: string;
+    /** Called after every edit with the full document text. Not called by `loadDocument`. */
+    onDocumentChange?: (text: string) => void;
 };
 
 /** Handle returned by `createAquarium`. */
@@ -125,6 +128,7 @@ export async function createAquarium(options: AquariumOptions): Promise<Aquarium
         throw new Error("createAquarium can only be called once per page.");
     }
     aquariumCreated = true;
+    aquariumOptions = options;
     editorElem = options.editorElement;
 
     // Display loading indicator (we are setting up the language server)
@@ -267,6 +271,8 @@ function loadDocument(documentText: string) {
                     }]
                 };
                 lspClient.sendNotification("textDocument/didChange", didChangeParams);
+                // Notify the embedder last, so a failing callback cannot keep the server out of date.
+                aquariumOptions.onDocumentChange?.(documentText);
             },
             applyStepError: function (errorMessage: string): void {
                 console.error("Received an error when applying a ProseMirror step: \n", errorMessage);
