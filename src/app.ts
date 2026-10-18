@@ -16,6 +16,9 @@ import { handleDiagnostics, handleFileProgress, handleLogTrace } from "./handler
 import { CrashDetector } from "./crashDetector";
 
 let viewPortRange: Range | null = null;
+// Incremented on every edit and document load, so that an asynchronous status
+// computation can tell whether the document changed while it was running.
+let revision = 0;
 let currentPos: Position | null = null;
 
 let teacherMode = false;
@@ -103,8 +106,16 @@ export type AquariumOptions = {
     goalsElement: HTMLElement;
     /** Document loaded on startup. */
     initialDocument: string;
-    /** Called after every edit with the full document text. Not called by `loadDocument`. */
+    /**
+     * Called after every edit with the full document text. Not called by `loadDocument`.
+     * Called synchronously on every keystroke: keep it cheap and debounce expensive work.
+     */
     onDocumentChange?: (text: string) => void;
+    /**
+     * Called when input area statuses have been computed, with the exact document
+     * text they belong to. Not called if the document changed during the computation.
+     */
+    onStatuses?: (statuses: ProofStatus[], text: string) => void;
 };
 
 /** Handle returned by `createAquarium`. */
@@ -243,6 +254,7 @@ function loadDocument(documentText: string) {
     // `currentTextDocument` must be set before `editor.init` below, since init
     // synchronously fires viewportHint, which reads it.
     currentTextDocument = textDocument;
+    revision++;
     viewPortRange = null;
     currentPos = null;
 
@@ -262,6 +274,7 @@ function loadDocument(documentText: string) {
             },
             documentChange: function (change: DocChange | WrappingDocChange): void {
                 textDocument.applyChange(change);
+                revision++;
                 const documentText = textDocument.text;
 
                 const didChangeParams = {
@@ -344,6 +357,10 @@ async function computeInputAreaStatus(client: LspClient, document: TextDocument,
     // so we add a debounce delay to this function to avoid recomputing on every keystroke.
     computeInputAreaStatusTimer = window.setTimeout(async () => {
         // console.log("[computeInputAreaStatus] Computing input area statuses...");
+        // Remember what we are computing statuses for, to detect stale results below
+        const startRevision = revision;
+        const text = document.text;
+
         // get input areas based on tags
         const inputAreas = getInputAreas(document);
         if (!inputAreas) {
@@ -361,16 +378,11 @@ async function computeInputAreaStatus(client: LspClient, document: TextDocument,
                         return determineProofStatus(client, document, a);
                     }
                 }));
-            if (window.parent !== window) {
-                window.parent.postMessage(
-                    {
-                        type: "waterproof:input-area-status",
-                        statuses: statuses,
-                    },
-                    "*"
-                );
-            }
             editor.setInputAreaStatus(statuses);
+            // Only report statuses that belong to the current text
+            if (revision === startRevision) {
+                aquariumOptions.onStatuses?.(statuses.map(toProofStatus), text);
+            }
         } catch (reason) {
             if (wasCanceledByServer(reason)) return;  // we've likely already sent new requests
         }
