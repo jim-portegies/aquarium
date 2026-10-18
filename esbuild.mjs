@@ -89,6 +89,9 @@ if (watch) {
   // One server suffices: it serves all of out/, which the watchers keep up to date.
   const {port} = await contexts[0].serve({
     servedir: "out",
+    // Allow cross-origin requests, e.g. from the worker when embedded in a
+    // sandboxed (opaque-origin) STACK iframe. Development server only.
+    cors: { origin: "*" },
     ...(userPort === undefined ? {} : {port: userPort})
   });
   console.log(`Listening on http://localhost:${port}`);

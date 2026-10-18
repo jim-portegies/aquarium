@@ -104,6 +104,65 @@ function createAnswerWriter(channel: AnswerChannel) {
     };
 }
 
+export type StackEmbedOptions = {
+    /** Name of the STACK input that stores the answer, e.g. "ans1". */
+    input: string;
+    /** URL of STACK's stackjsiframe.js, as produced by `[[cors src="stackjsiframe.min.js"/]]`. */
+    stackJs: string;
+    /** The exercise document. */
+    exercise?: string;
+    /** URL to fetch the exercise document from, instead of `exercise`. */
+    exerciseUrl?: string;
+};
+
+/**
+ * Embed the editor in a STACK question's [[iframe]] block, storing the answer
+ * in the given STACK input through STACK-JS.
+ */
+export async function embedInStack(options: StackEmbedOptions): Promise<void> {
+    // STACK puts [[script]] blocks in the iframe's <head>, so this may run before
+    // the body exists; both STACK-JS and the layout need it.
+    if (document.readyState === "loading") {
+        await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+    }
+    try {
+        // stack_js is an ES module served by the Moodle site, so its URL differs per site.
+        const { stack_js } = await import(options.stackJs);
+        // Resolves once STACK has sent the stored value; rejects after 5s without answer.
+        const inputId: string = await stack_js.request_access_to_input(options.input, false);
+        const input = document.getElementById(inputId) as HTMLInputElement;
+
+        const exercise = options.exerciseUrl
+            ? await fetchText(options.exerciseUrl)
+            : options.exercise;
+
+        await embed({
+            exercise,
+            channel: {
+                initial: input.value,
+                write(value) {
+                    // STACK marks the input read-only e.g. on the review page: never change it then.
+                    if (input.readOnly) return;
+                    input.value = value;
+                    // STACK-JS only forwards the value to the STACK input on a change event.
+                    input.dispatchEvent(new Event("change"));
+                },
+            },
+        });
+    } catch (error) {
+        console.error("Could not start the proof editor:", error);
+        document.body.textContent = `Could not start the proof editor: ${error}`;
+    }
+}
+
+async function fetchText(url: string): Promise<string> {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${url} (${response.status})`);
+    }
+    return response.text();
+}
+
 /**
  * Load the stylesheets the editor needs: embed.css (the editor's own styles,
  * bundled by esbuild) and editor.css (the page layout, shared with the playground).
