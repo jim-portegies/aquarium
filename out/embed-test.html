@@ -7,8 +7,34 @@
     <script src="embed.js"></script>
 </head>
 <body>
+    <div id="aquarium" style="flex: 1; min-height: 0; display: flex; flex-direction: column;"></div>
+
+    <!-- Stands in for the STACK input: shows the stored answer, kept across reloads. -->
+    <div style="width: 66%; padding-top: 8px;">
+        <button id="clear">Clear stored answer</button>
+        <textarea id="answer" readonly style="width: 100%; height: 8em; box-sizing: border-box;"></textarea>
+    </div>
+
     <script>
-        Aquarium.embed();
+        const KEY = "aquarium-embed-test-answer";
+        const answer = document.getElementById("answer");
+        answer.value = localStorage.getItem(KEY) ?? "";
+
+        document.getElementById("clear").onclick = () => {
+            localStorage.removeItem(KEY);
+            location.reload();
+        };
+
+        Aquarium.embed({
+            root: document.getElementById("aquarium"),
+            channel: {
+                initial: answer.value,
+                write(value) {
+                    answer.value = value;
+                    localStorage.setItem(KEY, value);
+                },
+            },
+        });
     </script>
 </body>
 </html>
