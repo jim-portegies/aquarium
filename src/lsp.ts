@@ -217,7 +217,7 @@ export class LspClient {
 const SCRIPT_BASE = (document.currentScript as HTMLScriptElement | null)?.src ?? document.baseURI;
 
 /** Absolute URL for a path served alongside this bundle, without trailing slash. */
-function assetUrl(path: string): string {
+export function assetUrl(path: string): string {
     return new URL(path || "/", SCRIPT_BASE).href.replace(/\/$/, "");
 }
 
