@@ -79,6 +79,22 @@ async function restartChecker(): Promise<void> {
     }
 }
 
+/**
+ * Proof status of one input area, as reported to embedders (e.g. stored in a
+ * STACK answer). Deliberately independent of the editor's `InputAreaStatus`
+ * values, which have changed between editor versions.
+ */
+export type ProofStatus = "proven" | "incomplete" | "invalid" | "unchecked";
+
+function toProofStatus(status: InputAreaStatus): ProofStatus {
+    switch (status) {
+        case InputAreaStatus.Correct: return "proven";
+        case InputAreaStatus.Incorrect: return "incomplete";
+        case InputAreaStatus.Invalid: return "invalid";
+        case InputAreaStatus.OutOfView: return "unchecked";
+    }
+}
+
 export type AquariumOptions = {
     /** Element the editor renders into; its scroll events drive viewport checking. */
     editorElement: HTMLElement;
