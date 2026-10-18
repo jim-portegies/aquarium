@@ -2,7 +2,32 @@
 // (built to out/embed.js). Unlike index.ts it has no playground features
 // (shortcuts, teacher mode, exercise dropdown), so students cannot use them.
 
+import tutorialContents from "./data/tutorial.md";
+import { createAquarium } from "./app";
 import { assetUrl } from "./lsp";
+
+// The exports of this module are exposed as the global `Aquarium` (see esbuild.mjs).
+
+export type EmbedOptions = {
+    /** The exercise document to start from; defaults to the tutorial. */
+    exercise?: string;
+    /** Element to render into; defaults to the page body. */
+    root?: HTMLElement;
+};
+
+/**
+ * Set up the editor and proof checker in this page: load the stylesheets, build
+ * the layout and start the editor on the exercise. May be called once per page.
+ */
+export async function embed(options: EmbedOptions = {}): Promise<void> {
+    await loadStylesheets();
+    const { editorElement, goalsElement } = createLayout(options.root ?? document.body);
+    await createAquarium({
+        editorElement,
+        goalsElement,
+        initialDocument: options.exercise ?? tutorialContents,
+    });
+}
 
 /**
  * Load the stylesheets the editor needs: embed.css (the editor's own styles,

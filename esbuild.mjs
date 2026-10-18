@@ -18,11 +18,8 @@ const userPort = portIndex !== -1
 // Setting to `copy` means we bundle the fonts in dist. Setting this to `dataurl` includes the fonts as base64 encoded data in the generated css file.
 const fontLoader = "base64";
 const sharedConfig = {
-  // index: the standalone playground; embed: the editor embedded in e.g. a STACK question
-  entryPoints: ["src/index.ts", "src/embed.ts"],
   outdir: "out",
   bundle: true,
-  format: "cjs",
   ...genSourcemap,
   platform: "browser",
   loader: {
@@ -50,12 +47,13 @@ const sharedConfig = {
     {
       name: "log build status",
       setup(build) {
+        const name = build.initialOptions.entryPoints?.[0];
         build.onEnd(result => {
           const errCount = result.errors.length;
           if (errCount > 0) {
-            console.error(`❌ Build failed with ${errCount} error${errCount > 1 ? "s" : ""}`);
+            console.error(`❌ Build of ${name} failed with ${errCount} error${errCount > 1 ? "s" : ""}`);
           } else {
-            console.log("✅ Build finished");
+            console.log(`✅ Build of ${name} finished`);
           }
         });
       }
@@ -63,20 +61,40 @@ const sharedConfig = {
   ]
 }
 
+// The standalone playground
+const indexConfig = {
+  ...sharedConfig,
+  entryPoints: ["src/index.ts"],
+  format: "cjs",
+};
+
+// The editor for embedding in another page (e.g. a STACK question). Built as an
+// IIFE that exposes the module's exports as one global, `Aquarium`, so the host
+// page can call `Aquarium.embed(...)` after loading it with a plain <script> tag.
+const embedConfig = {
+  ...sharedConfig,
+  entryPoints: ["src/embed.ts"],
+  format: "iife",
+  globalName: "Aquarium",
+};
+
+const configs = [indexConfig, embedConfig];
+
 if (watch) {
-  const ctx = await esbuild.context(sharedConfig);
+  const contexts = await Promise.all(configs.map(config => esbuild.context(config)));
   console.log("Watching for file changes...");
-  ctx.watch();
+  contexts.forEach(ctx => ctx.watch());
 } else if (serveFlag) {
-  const ctx = await esbuild.context(sharedConfig);
-  const {port} = await ctx.serve({
+  const contexts = await Promise.all(configs.map(config => esbuild.context(config)));
+  // One server suffices: it serves all of out/, which the watchers keep up to date.
+  const {port} = await contexts[0].serve({
     servedir: "out",
     ...(userPort === undefined ? {} : {port: userPort})
   });
   console.log(`Listening on http://localhost:${port}`);
-  ctx.watch();
+  contexts.forEach(ctx => ctx.watch());
 } else {
   // This builds, bundles and optionally minifies the editor package
-  await esbuild.build(sharedConfig);
+  await Promise.all(configs.map(config => esbuild.build(config)));
 }
 
