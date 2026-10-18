@@ -18,8 +18,9 @@ const userPort = portIndex !== -1
 // Setting to `copy` means we bundle the fonts in dist. Setting this to `dataurl` includes the fonts as base64 encoded data in the generated css file.
 const fontLoader = "base64";
 const sharedConfig = {
-  entryPoints: ["src/index.ts"],
-  outfile: "out/index.js",
+  // index: the standalone playground; embed: the editor embedded in e.g. a STACK question
+  entryPoints: ["src/index.ts", "src/embed.ts"],
+  outdir: "out",
   bundle: true,
   format: "cjs",
   ...genSourcemap,
