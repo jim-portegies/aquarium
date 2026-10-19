@@ -132,7 +132,9 @@ export async function embedInStack(options: StackEmbedOptions): Promise<void> {
         const inputId: string = await stack_js.request_access_to_input(options.input, false);
         const input = document.getElementById(inputId) as HTMLInputElement;
 
-        const exercise = options.exerciseUrl
+        // The exercise is only needed when nothing is stored yet; skipping the fetch
+        // otherwise means a returning student can still open their answer if the URL is down.
+        const exercise = options.exerciseUrl && !input.value
             ? await fetchText(options.exerciseUrl)
             : options.exercise;
 
